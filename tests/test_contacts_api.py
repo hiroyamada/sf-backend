@@ -186,6 +186,21 @@ def test_photo_rejects_non_image_data(client, payload):
         assert response.status_code == 422
 
 
+def test_photo_rejects_malformed_base64(client, payload):
+    response = client.post(BASE, json={**payload, "photo": "data:image/png;base64,A"})
+    assert response.status_code == 422
+
+
+def test_photo_rejects_mismatched_content(client, payload):
+    # "SGVsbG8=" is valid base64, but decodes to "Hello" — not PNG bytes.
+    mislabeled = "data:image/png;base64,SGVsbG8="
+
+    assert client.post(BASE, json={**payload, "photo": mislabeled}).status_code == 422
+
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    assert client.patch(f"{BASE}/{contact_id}", json={"photo": mislabeled}).status_code == 422
+
+
 def test_photo_rejects_oversized(client, payload):
     oversized = "data:image/png;base64," + "A" * 3_000_000
     response = client.post(BASE, json={**payload, "photo": oversized})

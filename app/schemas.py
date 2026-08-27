@@ -1,3 +1,5 @@
+import base64
+import binascii
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
@@ -10,6 +12,33 @@ _PHOTO_EXAMPLE = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
+
+
+def _validate_photo(value: str | None) -> str | None:
+    """
+    Check that a photo's base64 payload decodes and its magic bytes match the
+    declared media type. Runs after `PHOTO_PATTERN`, so the data-URL shape is
+    already guaranteed.
+    """
+    if value is None:
+        return value
+
+    header, _, encoded = value.partition(",")
+    declared = header.removeprefix("data:image/").removesuffix(";base64")
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("photo is not valid base64 data") from None
+
+    matches = {
+        "png": decoded.startswith(b"\x89PNG\r\n\x1a\n"),
+        "jpeg": decoded.startswith(b"\xff\xd8\xff"),
+        "gif": decoded.startswith((b"GIF87a", b"GIF89a")),
+        "webp": decoded[:4] == b"RIFF" and decoded[8:12] == b"WEBP",
+    }[declared]
+    if not matches:
+        raise ValueError(f"photo data does not contain a {declared} image")
+    return value
 
 
 class ContactBase(BaseModel):
@@ -89,6 +118,11 @@ class ContactBase(BaseModel):
         examples=[_PHOTO_EXAMPLE],
     )
 
+    @field_validator("photo")
+    @classmethod
+    def _check_photo(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
+
 
 _FULL_EXAMPLE = {
     "first_name": "Ada",
@@ -159,6 +193,11 @@ class ContactUpdate(BaseModel):
         pattern=PHOTO_PATTERN,
         description="New profile photo as a base64 `data:` URL; an explicit `null` removes it.",
     )
+
+    @field_validator("photo")
+    @classmethod
+    def _check_photo(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
 
 
 class ContactRead(ContactBase):
