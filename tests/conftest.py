@@ -34,4 +34,8 @@ def payload() -> dict:
         "postal_code": "94105",
         "country": "USA",
         "notes": "First programmer.",
+        "photo": (
+            "data:image/png;base64,"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        ),
     }
