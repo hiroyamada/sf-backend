@@ -141,6 +141,60 @@ def test_delete_contact(client, payload):
     assert client.delete(f"{BASE}/{contact_id}").status_code == 404
 
 
+def test_create_returns_addresses(client, payload):
+    body = client.post(BASE, json=payload).json()
+    assert [a["type"] for a in body["addresses"]] == ["home", "work"]
+    assert body["addresses"][0]["city"] == "San Francisco"
+    assert all(a["id"] > 0 for a in body["addresses"])
+
+
+def test_addresses_default_to_empty_list(client):
+    response = client.post(
+        BASE,
+        json={"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"},
+    )
+    assert response.status_code == 201
+    assert response.json()["addresses"] == []
+
+
+def test_address_rejects_unknown_type(client, payload):
+    bad = {**payload, "addresses": [{"type": "vacation", "city": "Maui"}]}
+    assert client.post(BASE, json=bad).status_code == 422
+
+
+def test_put_replaces_address_set(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    response = client.put(
+        f"{BASE}/{contact_id}",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "email": "ada@example.com",
+            "addresses": [{"type": "other", "city": "Paris", "country": "France"}],
+        },
+    )
+    assert response.status_code == 200
+    addresses = response.json()["addresses"]
+    assert [a["type"] for a in addresses] == ["other"]
+    assert addresses[0]["city"] == "Paris"
+
+
+def test_patch_replaces_addresses_only_when_sent(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    untouched = client.patch(f"{BASE}/{contact_id}", json={"phone": "+1-000-000-0000"}).json()
+    assert len(untouched["addresses"]) == 2
+
+    replaced = client.patch(
+        f"{BASE}/{contact_id}",
+        json={"addresses": [{"type": "work", "city": "Boston"}]},
+    ).json()
+    assert [a["type"] for a in replaced["addresses"]] == ["work"]
+
+    cleared = client.patch(f"{BASE}/{contact_id}", json={"addresses": None}).json()
+    assert cleared["addresses"] == []
+
+
 def test_create_returns_photo(client, payload):
     created = client.post(BASE, json=payload).json()
     assert created["photo"] == payload["photo"]

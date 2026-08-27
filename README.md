@@ -108,8 +108,14 @@ also read):
 
 ```
 first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes, photo
+addresses, notes, photo
 ```
+
+`addresses` is a list of postal addresses stored in their own table with a
+foreign key back to the contact. Each one has a `type` (`home`, `work`, or
+`other`) plus optional `street`, `city`, `state`, `postal_code`, and
+`country`. Sending `addresses` on `PUT` or `PATCH` replaces the whole list;
+responses include a server-assigned `id` per address.
 
 `photo` is an optional profile picture, sent as a base64 `data:` URL
 (PNG/JPEG/GIF/WebP, at most 3,000,000 characters ≈ a 2 MB image).
