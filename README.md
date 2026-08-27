@@ -108,8 +108,11 @@ also read):
 
 ```
 first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes
+address, city, state, postal_code, country, notes, photo
 ```
+
+`photo` is an optional profile picture, sent as a base64 `data:` URL
+(PNG/JPEG/GIF/WebP, at most 3,000,000 characters ≈ a 2 MB image).
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
 

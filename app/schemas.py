@@ -1,6 +1,44 @@
+import base64
+import binascii
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+# A 2 MB image grows to ~2.8M characters once base64-encoded, so 3M leaves headroom.
+PHOTO_MAX_LENGTH = 3_000_000
+# SVG is deliberately excluded: data:image/svg+xml can carry scripts.
+PHOTO_PATTERN = r"^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$"
+_PHOTO_EXAMPLE = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def _validate_photo(value: str | None) -> str | None:
+    """
+    Check that a photo's base64 payload decodes and its magic bytes match the
+    declared media type. Runs after `PHOTO_PATTERN`, so the data-URL shape is
+    already guaranteed.
+    """
+    if value is None:
+        return value
+
+    header, _, encoded = value.partition(",")
+    declared = header.removeprefix("data:image/").removesuffix(";base64")
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("photo is not valid base64 data") from None
+
+    matches = {
+        "png": decoded.startswith(b"\x89PNG\r\n\x1a\n"),
+        "jpeg": decoded.startswith(b"\xff\xd8\xff"),
+        "gif": decoded.startswith((b"GIF87a", b"GIF89a")),
+        "webp": decoded[:4] == b"RIFF" and decoded[8:12] == b"WEBP",
+    }[declared]
+    if not matches:
+        raise ValueError(f"photo data does not contain a {declared} image")
+    return value
 
 
 class ContactBase(BaseModel):
@@ -69,6 +107,21 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        pattern=PHOTO_PATTERN,
+        description=(
+            "Profile photo as a base64 `data:` URL (PNG, JPEG, GIF, or WebP). "
+            "At most 3,000,000 characters — roughly a 2 MB image."
+        ),
+        examples=[_PHOTO_EXAMPLE],
+    )
+
+    @field_validator("photo")
+    @classmethod
+    def _check_photo(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
 
 
 _FULL_EXAMPLE = {
@@ -134,6 +187,17 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        pattern=PHOTO_PATTERN,
+        description="New profile photo as a base64 `data:` URL; an explicit `null` removes it.",
+    )
+
+    @field_validator("photo")
+    @classmethod
+    def _check_photo(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
 
 
 class ContactRead(ContactBase):

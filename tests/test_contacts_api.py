@@ -141,6 +141,72 @@ def test_delete_contact(client, payload):
     assert client.delete(f"{BASE}/{contact_id}").status_code == 404
 
 
+def test_create_returns_photo(client, payload):
+    created = client.post(BASE, json=payload).json()
+    assert created["photo"] == payload["photo"]
+    fetched = client.get(f"{BASE}/{created['id']}").json()
+    assert fetched["photo"] == payload["photo"]
+
+
+def test_photo_defaults_to_null(client):
+    response = client.post(
+        BASE,
+        json={"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"},
+    )
+    assert response.status_code == 201
+    assert response.json()["photo"] is None
+
+
+def test_patch_can_set_and_clear_photo(client, payload):
+    photo = payload.pop("photo")
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    updated = client.patch(f"{BASE}/{contact_id}", json={"photo": photo}).json()
+    assert updated["photo"] == photo
+    assert updated["first_name"] == "Ada"
+
+    cleared = client.patch(f"{BASE}/{contact_id}", json={"photo": None}).json()
+    assert cleared["photo"] is None
+    assert cleared["first_name"] == "Ada"
+
+
+def test_put_without_photo_clears_it(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    response = client.put(
+        f"{BASE}/{contact_id}",
+        json={"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["photo"] is None  # PUT is a full replace; clients must resend the photo
+
+
+def test_photo_rejects_non_image_data(client, payload):
+    for bad in ("https://example.com/x.png", "data:text/html;base64,PGI+"):
+        response = client.post(BASE, json={**payload, "photo": bad})
+        assert response.status_code == 422
+
+
+def test_photo_rejects_malformed_base64(client, payload):
+    response = client.post(BASE, json={**payload, "photo": "data:image/png;base64,A"})
+    assert response.status_code == 422
+
+
+def test_photo_rejects_mismatched_content(client, payload):
+    # "SGVsbG8=" is valid base64, but decodes to "Hello" — not PNG bytes.
+    mislabeled = "data:image/png;base64,SGVsbG8="
+
+    assert client.post(BASE, json={**payload, "photo": mislabeled}).status_code == 422
+
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    assert client.patch(f"{BASE}/{contact_id}", json={"photo": mislabeled}).status_code == 422
+
+
+def test_photo_rejects_oversized(client, payload):
+    oversized = "data:image/png;base64," + "A" * 3_000_000
+    response = client.post(BASE, json={**payload, "photo": oversized})
+    assert response.status_code == 422
+
+
 def test_root_lists_entrypoints(client):
     body = client.get("/").json()
     assert body["contacts"] == BASE
